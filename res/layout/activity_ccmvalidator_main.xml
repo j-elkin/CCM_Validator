@@ -1,0 +1,65 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingBottom="@dimen/activity_vertical_margin"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="@dimen/activity_vertical_margin"
+    tools:context="com.example.ccmvalidator.CCMValidatorMainActivity" >
+
+    <Button
+        android:id="@+id/btnQR"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentTop="true"
+        android:text="Escanear" />
+
+    <TextView
+        android:id="@+id/textView2"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignBaseline="@+id/textView1"
+        android:layout_alignBottom="@+id/textView1"
+        android:layout_alignLeft="@+id/btnQR"
+        android:text="ID:" />
+
+    <TextView
+        android:id="@+id/textView1"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/btnQR"
+        android:layout_marginLeft="20dp"
+        android:layout_marginTop="26dp"
+        android:layout_toRightOf="@+id/textView2"
+        android:text="Documento de Identidad" />
+
+    <Button
+        android:id="@+id/btnValidarRegistro"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignLeft="@+id/textView2"
+        android:layout_below="@+id/textView2"
+        android:layout_marginTop="31dp"
+        android:text="Validar Registro" />
+
+    <Button
+        android:id="@+id/btnDescontarAlmuerzo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignLeft="@+id/btnValidarRegistro"
+        android:layout_below="@+id/btnValidarRegistro"
+        android:layout_marginTop="24dp"
+        android:text="Descontar Almuerzo" />
+
+    <TextView
+        android:id="@+id/txtNombrePersona"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignLeft="@+id/btnDescontarAlmuerzo"
+        android:layout_below="@+id/btnDescontarAlmuerzo"
+        android:layout_marginTop="20dp"
+        android:text="nombre" />
+
+</RelativeLayout>
