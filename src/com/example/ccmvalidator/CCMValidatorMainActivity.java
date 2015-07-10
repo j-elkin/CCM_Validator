@@ -1,5 +1,6 @@
 package com.example.ccmvalidator;
 
+import android.support.v7.app.ActionBar;
 import android.support.v7.app.ActionBarActivity;
 import android.util.Log;
 
@@ -16,6 +17,8 @@ import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.view.Menu;
@@ -32,6 +35,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.reflect.Type;
 import java.sql.Connection;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -49,6 +53,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Date;
 
 
 public class CCMValidatorMainActivity extends ActionBarActivity {
@@ -86,20 +92,28 @@ public class CCMValidatorMainActivity extends ActionBarActivity {
 	//Boton destinado a la asignación de almuerzos a una persona. Máximo son 4 almuerzos
 	private Button btnDarAlmuerzo;
 	
-	//Conexion con la base de datos remota. 
-	private Connection conexionMySQL;
-	
 	//Se encarga de mostrar el dialogo emergente mientras se procesa la petición al servidor
 	private ProgressDialog progresDialogRing;
 	
 	private Context context;
 	
+	//Alerta de que se muestra en la interfaz según las respuetas del server
 	private AlertDialog.Builder alertDialog;
+	
+	//Permite saber si la lectura hecha por codigo QR corresponde a un documento de identidad registrado en el web service
+	private boolean registroConfirmado = false;
+	
+	//Formateador para la fecha y hora actual
+	private SimpleDateFormat sDateFormat = new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss");
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_ccmvalidator_main);
+	
+		getSupportActionBar().setIcon( R.drawable.ic_launcher );
+		getSupportActionBar().setDisplayOptions(ActionBar.DISPLAY_SHOW_HOME | ActionBar.DISPLAY_SHOW_TITLE);
+		
 		context = this;
 		iniComponents();
 		
@@ -110,16 +124,19 @@ public class CCMValidatorMainActivity extends ActionBarActivity {
 		btnLeerCodigoQR.setOnClickListener( lectura );
 		
 		txtResultado = (TextView) findViewById(R.id.textView1);
-		txtResultado.setVisibility(View.INVISIBLE);
+		//txtResultado.setVisibility(View.INVISIBLE);
 		
 		txtNombre = (TextView) findViewById(R.id.txtNombrePersona);
-		txtNombre.setVisibility(View.INVISIBLE);
+		//txtNombre.setVisibility(View.INVISIBLE);
 		
 		btnValidarRegistro = (Button) findViewById(R.id.btnValidarRegistro);
 		btnValidarRegistro.setOnClickListener( asistencia );
 		
 		btnDarAlmuerzo = (Button) findViewById(R.id.btnDescontarAlmuerzo);
 		btnDarAlmuerzo.setOnClickListener( almuerzo );
+		
+		progresDialogRing = new ProgressDialog( context );
+		alertDialog = new AlertDialog.Builder( context );
 	}
 
 	//Lectura del código qr
@@ -127,18 +144,20 @@ public class CCMValidatorMainActivity extends ActionBarActivity {
 		
 		@Override
 		public void onClick(View v) {
-			// TODO Auto-generated method stub
-			Toast.makeText(getApplicationContext(), "Me pulsaste!", Toast.LENGTH_SHORT).show();
-			Log.d("test", "Me pulsaste!");
 			
-			String packageString = "com.google.zxing.client.android"; //Lanza directame la app Barcode Scanner
-			//String packageString = "com.example.ccmvalidator"; //Lanza directame la app CCM Validator
-			//Intent intentQR = new Intent(CCMValidatorMainActivity.this, com.google.zxing.client.android.CaptureActivity.class);
-			Intent intentQR = new Intent("com.google.zxing.client.android.SCAN"); 
-			intentQR.setPackage(packageString);
-			intentQR.putExtra("SCAN_MODE", "QR_CODE_MODE");  
-		    startActivityForResult(intentQR, SCANNER_REQUEST_CODE); 
-		
+			if( hayInternet() ){
+
+				String packageString = "com.google.zxing.client.android"; //Lanza directame la app Barcode Scanner
+				//String packageString = "com.example.ccmvalidator"; //Lanza directame la app CCM Validator
+				//Intent intentQR = new Intent(CCMValidatorMainActivity.this, com.google.zxing.client.android.CaptureActivity.class);
+				Intent intentQR = new Intent("com.google.zxing.client.android.SCAN"); 
+				intentQR.setPackage(packageString);
+				intentQR.putExtra("SCAN_MODE", "QR_CODE_MODE");  
+			    startActivityForResult(intentQR, SCANNER_REQUEST_CODE); 
+			}
+			else{
+				mostrarAlertDialog("Dispositivo sin conexión:", "Por favor verifica la conexión a Internet.");
+			}
 		
 		}
 	};
@@ -149,17 +168,21 @@ public class CCMValidatorMainActivity extends ActionBarActivity {
 			if (resultCode == RESULT_OK) {
 				// Handle successful scan
 				String capturedQrValue = intent.getStringExtra("SCAN_RESULT");
-				// String format =
-				intent.getStringExtra("SCAN_RESULT_FORMAT");
-				Toast.makeText(CCMValidatorMainActivity.this, "ID:" + capturedQrValue, Toast.LENGTH_SHORT).show();
+				// String format = intent.getStringExtra("SCAN_RESULT_FORMAT");
+				
+				Toast.makeText(CCMValidatorMainActivity.this, "ID:" + capturedQrValue, Toast.LENGTH_LONG).show();
 				
 				txtResultado.setText(capturedQrValue);
-				txtResultado.setVisibility(View.VISIBLE);
+				Log.d("test", "ID:"+capturedQrValue);
+				//txtResultado.setVisibility(View.VISIBLE);
 				
 				String url = URL_PERSONA + capturedQrValue;
+				
+				//Llamado al hilo para consultar el registro de una persona de acuerdo a la lectura del codigo qr, 
+				//el cual debe leer un documento de identidad
 				new consultarPersona().execute( url );
 				
-				Log.i("test", "resultado:"+capturedQrValue);
+				
 			} 
 			else if (resultCode == RESULT_CANCELED) {
 				// Handle cancel
@@ -173,39 +196,71 @@ public class CCMValidatorMainActivity extends ActionBarActivity {
 	}
 	
 	
-	
+	//Realiza la confirmación de asistencia de una persona
 	OnClickListener asistencia = new OnClickListener() {
 		
 		@Override
 		public void onClick(View v) {
-			// TODO Auto-generated method stub
-			Toast.makeText(getApplicationContext(), "Pronto se validará", Toast.LENGTH_SHORT).show();
-			
-			String url = URL_PERSONA + txtResultado.getText();
-			
-			//Log.d("test","url:"+url);
-			
-			/////new consultarPersona().execute( url );
-			
-			new hiloAsistencia().execute("1");
+		
+			if( hayInternet() ){
+				if(registroConfirmado){
+					String idPersona = ""+txtResultado.getText();
+					new hiloAsistencia().execute( idPersona );
+				}
+				else{
+					mostrarAlertDialog("Un momento!", "Por favor escanea un código QR");
+				}
+			}
+			else{
+				mostrarAlertDialog("Dispositivo sin conexión:", "Por favor verifica la conexión a Internet.");
+			}
 			
 			
 		}
 	};
 	
+	//Realiza el registro de un almuerzo a la persona dada por documento de identidad (codigo qr)
 	OnClickListener almuerzo = new OnClickListener() {
 		
 		@Override
 		public void onClick(View v) {
-			// TODO Auto-generated method stub
-			Toast.makeText(getApplicationContext(), "Pronto se descontará el almuerzo", Toast.LENGTH_SHORT).show();
-			
-			String id = ""+txtResultado.getText();
-			new hiloAlmuerzo().execute( id );
+			if( hayInternet() ){
+				if(registroConfirmado){
+					String id = ""+txtResultado.getText();
+					new hiloAlmuerzo().execute( id );
+				}
+				else{
+					mostrarAlertDialog("Un momento!", "Por favor escanea un código QR");
+				}
+			}
+			else{
+				mostrarAlertDialog("Dispositivo sin conexión:", "Por favor verifica la conexión a Internet.");
+			}
 		}
 	};
 	
 	
+	//Lanza el dialogo de espera de respuesta del servidor
+	public void lanzarProgresDialog(String titulo, String mensaje){
+		
+		progresDialogRing.setTitle( titulo );
+		progresDialogRing.setIcon( R.drawable.ic_launcher );
+		progresDialogRing.setMessage( mensaje );
+		progresDialogRing.setCancelable(false);
+		progresDialogRing.setIndeterminate(true);
+		progresDialogRing.show();
+	}
+	
+	//Lanza el alert diaglo que muestra las respuetas del servidor
+	public void mostrarAlertDialog(String titulo, String mensaje ){
+		
+		alertDialog.setTitle( titulo );
+		alertDialog.setIcon( R.drawable.ic_launcher );
+		//alertDialog.setMessage( mensaje );
+		alertDialog.setCancelable( false );
+    	alertDialog.setPositiveButton( mensaje, null);
+    	alertDialog.show();
+	}
 
 	//*************************** hilo ***************************************
 	//Clase: AsyncTask para consultar una persona según el documento de identificación (peticion GET)
@@ -214,12 +269,9 @@ public class CCMValidatorMainActivity extends ActionBarActivity {
 		//Antes de realizar la petición al servidor se muestra un ProgressDialog 
 		@Override
 		protected void onPreExecute(){
-			progresDialogRing = new ProgressDialog( context );
-			progresDialogRing.setTitle("Consultando registro...");
-			progresDialogRing.setMessage("Por favor espere.");
-			progresDialogRing.setCancelable(false);
-			progresDialogRing.setIndeterminate(true);
-			progresDialogRing.show();
+			
+			lanzarProgresDialog( "Consultando registro...", "Por favor espere.");
+			
 		}
 		
 		//realizamos la petición HTTP usando el método get() que proporciona HttpRequest.java
@@ -227,10 +279,13 @@ public class CCMValidatorMainActivity extends ActionBarActivity {
 		protected String doInBackground(String... urls) {
 			Log.d("test", "URL recivida:"+urls[0]);
 	        try {
-	            return HttpRequest.get(urls[0]).accept("application/json")
+	            return HttpRequest
+	            		.get(urls[0])
+	            		.accept("application/json")
 	                    .body();//Devuelve el cuerpo de la respuesta en el metodo body()
-	        } catch (HttpRequestException exception) {
-	            return null;
+	        } 
+	        catch (HttpRequestException exception) {
+	            return "NULL";
 	        }
 	    }
 		
@@ -238,50 +293,43 @@ public class CCMValidatorMainActivity extends ActionBarActivity {
 		@Override
 	    protected void onPostExecute(String response) {
 	    	
+			if(response.equals("NULL")){
+				registroConfirmado = false;
+				mostrarAlertDialog( "Oops!", "No se pudo confirmar el registro. Intente nuevamente escaneando el código QR.");
+			}
+			else{
 	    	
-	        Log.i("test", prettyfyJSON(response));
-	        //se hace el mapeo
-	        
-	        boolean nombre = prettyfyJSON(response).contains("nombre");
-	        Log.d("test", "tiene nombres:"+nombre);
-	       
-	        if(nombre){
-        
-		        Persona persona = getPersona( response );
-		        //txtNombre.setText(  prettyfyJSON(response)  );
-		        if(persona != null ){
-		        	txtNombre.setText( persona.getNombre() +" "+ persona.getApellidos() );
-		        	txtNombre.setVisibility(View.VISIBLE);
+		        Log.i("test", prettyfyJSON(response));
+		        //se hace el mapeo
+		        
+		        boolean nombre = prettyfyJSON(response).contains("nombre");
+		        Log.d("test", "tiene nombre:"+nombre);
+		       
+		        if(nombre){
+		        	//se obtiene un objeto persona
+			        Persona persona = getPersona( response );
+			        
+			        if(persona != null ){
+			        	txtNombre.setText( persona.getNombre() +" "+ persona.getApellidos() );
+			        	//txtNombre.setVisibility(View.VISIBLE);
+			        	registroConfirmado = true;
+			        }
+			    }
+		        else{
+		        	Log.d("test", "Persona no registrada");
 		        	
-		        	/*if( confirmarAsistencia( persona.getDocPersona() )  ){
-		        		Log.i("test", "Asistencia confirmada");
-		        	}
-		        	else{
-		        		Log.i("test", "no se pudo confirmar la asistencia");
-		        	}*/
+		        	mostrarAlertDialog( "Consulta del registro:", "La persona no está registrada.");
 		        	
+		        	txtNombre.setText("Persona no registrada.");
+		        	
+		        	registroConfirmado = false;
 		        }
 		    }
-	        else{
-	        	Log.d("test", "Persona no registrada");
-	        	alertDialog = new AlertDialog.Builder( context );
-	        	alertDialog.setCancelable( false );
-	        	alertDialog.setPositiveButton("Persona no registrada", null);
-	        	alertDialog.show();
-	        	
-	        	txtNombre.setText("No registrado");
-	        	
-	        }
-	        
-	        if(progresDialogRing.isShowing()){
+			
+			if(progresDialogRing.isShowing()){
 	    		progresDialogRing.dismiss();
 	    	}
-	    	
-	        else{
-	        	txtNombre.setText("No registrado");
-	        }
-	        
-	    }
+		}
 	}
 	
 	
@@ -313,25 +361,16 @@ public class CCMValidatorMainActivity extends ActionBarActivity {
 		//Antes de realizar la petición al servidor se muestra un ProgressDialog 
 		@Override
 		protected void onPreExecute(){
-			progresDialogRing = new ProgressDialog( context );
-			progresDialogRing.setTitle("Confirmando asistencia...");
-			progresDialogRing.setMessage("Por favor espere.");
-			progresDialogRing.setCancelable(false);
-			progresDialogRing.setIndeterminate(true);
-			progresDialogRing.show();
+			
+			lanzarProgresDialog("Confirmando asistencia...", "Por favor espere.");
+			
 		}
 		
 		@Override
 		protected Boolean doInBackground(String... params) {
-			// TODO Auto-generated method stub
-			boolean asistencia = confirmarAsistencia( params[0] );
-			if( asistencia ){
-        		Log.i("test", "Asistencia confirmada");
-        	}
-        	else{
-        		Log.i("test", "No se pudo confirmar la asistencia");
-        	}
-			return asistencia;
+			
+			return  confirmarAsistencia( params[0] );
+
 		}
 		
 		@Override
@@ -341,65 +380,58 @@ public class CCMValidatorMainActivity extends ActionBarActivity {
 			}
 			
 			if(asistencia){
-				alertDialog = new AlertDialog.Builder( context );
-		    	alertDialog.setCancelable( false );
-		    	alertDialog.setPositiveButton("Asistencia confirmada con éxito", null);
-		    	alertDialog.show();
+				mostrarAlertDialog("Confirmación validada:", "Asistencia confirmada con éxito.");
+        		registroConfirmado = false;
+        		txtResultado.setText( R.string.documento );
+        		txtNombre.setText( R.string.nombreCompleto );
 			}
 			else{
-				alertDialog = new AlertDialog.Builder( context );
-		    	alertDialog.setCancelable( false );
-		    	alertDialog.setPositiveButton("No se pudo confirmar la asistencia", null);
-		    	alertDialog.show();
+				mostrarAlertDialog("Confirmación rechazada:", "No se pudo confirmar la asistencia. Intente nuevamente.");
 			}
 		}
 	}
 	
 	
 	//Metodo que se encarga de actualizar el registro de asistencia de una persona
-		public Boolean confirmarAsistencia(String id){
-			boolean actualizado = false;
-			Log.d("test", "ID person:"+id);
-			try {
-				//Creacion de HttpClient
-				HttpClient httpClient = new DefaultHttpClient();
-				//hacer solicitud PUT 
-				String url = URL_PERSONA_ASISTENCIA + id;
-				Log.e("test",url);
-				HttpPut httpPut = new HttpPut( url );
-					
-				
-				List<NameValuePair> parametroAsistencia = new ArrayList<NameValuePair>(2);
-				parametroAsistencia.add(new BasicNameValuePair("asistio", "BIEN!") );
-				
-				httpPut.setEntity(new UrlEncodedFormEntity( parametroAsistencia) );
-				
-				//Ejecutar la peticion PUT
-				HttpResponse httpResponse = httpClient.execute(httpPut);
-				
-				//actualizado = true;
-				int statusCode = httpResponse.getStatusLine().getStatusCode();
-				if(statusCode == 200 || statusCode == 201){
-					actualizado = true;
-					Log.e("test", "Status Code:" + statusCode);
-				}
-				else{
-					Log.e("test", "Mensaje Error:" + statusCode);
-				}
-				
-								
-				
-			} 
-			catch (Exception e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-				Log.e("test","Excepción ocurrida:"+e.getLocalizedMessage());
+	public Boolean confirmarAsistencia(String id){
+		boolean actualizado = false;
+		//Log.d("test", "ID person:"+id);
+		try {
+			//Creacion de HttpClient
+			HttpClient httpClient = new DefaultHttpClient();
+			//hacer solicitud PUT 
+			String url = URL_PERSONA_ASISTENCIA + id;
+			Log.e("test",url);
+			HttpPut httpPut = new HttpPut( url );
+			
+			List<NameValuePair> parametroAsistencia = new ArrayList<NameValuePair>(2);
+			parametroAsistencia.add(new BasicNameValuePair("asistio", "SI") );
+			
+			httpPut.setEntity(new UrlEncodedFormEntity( parametroAsistencia) );
+			
+			//Ejecutar la peticion PUT
+			HttpResponse httpResponse = httpClient.execute(httpPut);
+			
+			int statusCode = httpResponse.getStatusLine().getStatusCode();
+			if(statusCode == 200 || statusCode == 201){
+				actualizado = true;
+				Log.e("test", "Status Code:" + statusCode);
+			}
+			else{
+				Log.e("test", "Mensaje Error:" + statusCode);
 			}
 			
-			return actualizado;
-			
-			
+		} 
+		catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			Log.e("test","Excepción ocurrida:"+e.getLocalizedMessage());
 		}
+		
+		return actualizado;
+		
+		
+	}
 	//***************************  fin hilo Asistencia ***************************************
 	
 	//***************************  hilo Almuerzos  ***************************************
@@ -408,12 +440,9 @@ private class hiloAlmuerzo extends AsyncTask<String, Long, String> {
 	//Antes de realizar la petición al servidor se muestra un ProgressDialog 
 	@Override
 	protected void onPreExecute(){
-		progresDialogRing = new ProgressDialog( context );
-		progresDialogRing.setTitle("Registrando almuerzo...");
-		progresDialogRing.setMessage("Por favor espere.");
-		progresDialogRing.setCancelable(false);
-		progresDialogRing.setIndeterminate(true);
-		progresDialogRing.show();
+	
+		lanzarProgresDialog("Registrando almuerzo...", "Por favor espere.");
+
 	}
 	
 	
@@ -425,7 +454,7 @@ private class hiloAlmuerzo extends AsyncTask<String, Long, String> {
     		Log.i("test", "Almuerzo registrado");
     	}
     	else{
-    		Log.i("test", "NO se puede dar mas almuerzos a esta persona");
+    		Log.i("test", "No se puede dar mas almuerzos a esta persona");
     	}
 		return respuesta;
 	}
@@ -437,22 +466,18 @@ private class hiloAlmuerzo extends AsyncTask<String, Long, String> {
 		}
 		
 		if(almuerzo.equals("true")){
-			alertDialog = new AlertDialog.Builder( context );
-	    	alertDialog.setCancelable( false );
-	    	alertDialog.setPositiveButton("Almuerzo registrado", null);
-	    	alertDialog.show();
+			mostrarAlertDialog("Registro exitoso:", "El almuerzo fue registrado.");
+			registroConfirmado = false;
+    		txtResultado.setText( R.string.documento );
+    		txtNombre.setText( R.string.nombreCompleto );
+			
 		}
 		else if( almuerzo.equals("false")){
-			alertDialog = new AlertDialog.Builder( context );
-	    	alertDialog.setCancelable( false );
-	    	alertDialog.setPositiveButton("No se pudo registrar el almuerzo, por favor intente de nuevo.", null);
-	    	alertDialog.show();
+			mostrarAlertDialog("Registro fracasado:", "No se pudo registrar el almuerzo, por favor intente de nuevo.");
+			
 		}
 		else{
-			alertDialog = new AlertDialog.Builder( context );
-	    	alertDialog.setCancelable( false );
-	    	alertDialog.setPositiveButton("La persona ya consumio todos los almuerzos", null);
-	    	alertDialog.show();
+			mostrarAlertDialog("Almuerzo no disponible:", "Esta persona ya consumio todos los almuerzos.");
 		}
 	}
 	
@@ -462,7 +487,6 @@ private class hiloAlmuerzo extends AsyncTask<String, Long, String> {
 //Metodo que se encarga de actualizar el registro de asistencia de una persona
 	public String registrarAlmuerzo(String id){
 		String almuerzoDado = "false";
-		Log.d("test", "ID persona para almuerzo:"+id);
 		try {
 			//Creacion de HttpClient
 			HttpClient httpClient = new DefaultHttpClient();
@@ -510,11 +534,19 @@ private class hiloAlmuerzo extends AsyncTask<String, Long, String> {
 		      	Log.i("test","Esta persona todavía tiene almuerzos");
 		    
 		    	HttpPost httpPost = new HttpPost(URL_REGISTRAR_ALMUERZO);	
-
+		    	
+		    	
+		    	String fechaHoraActual = sDateFormat.format(new Date());
+		    	Log.d("test", "FechaHora actual:"+fechaHoraActual);
+		    	
+		    	String [] fecha_Hora = fechaHoraActual.split("_");
+		    	String fechaActual = fecha_Hora[0];
+		    	String horaActual = fecha_Hora[1];
+		    	
 				// Add your data
 			    List<NameValuePair> nameValuePairs = new ArrayList<NameValuePair>(2);
-			    nameValuePairs.add(new BasicNameValuePair("fecha", "2015-07-09"));
-			    nameValuePairs.add(new BasicNameValuePair("hora", "22:45"));
+			    nameValuePairs.add(new BasicNameValuePair("fecha", fechaActual));
+			    nameValuePairs.add(new BasicNameValuePair("hora", horaActual));
 			    nameValuePairs.add(new BasicNameValuePair("persona_docPersona", id));
 			    httpPost.setEntity(new UrlEncodedFormEntity(nameValuePairs));
 
@@ -546,6 +578,25 @@ private class hiloAlmuerzo extends AsyncTask<String, Long, String> {
 
 	//***************************  fin hilo Almuerzos  ***************************************
 
+	//Métdodo para verificar el estado de Internet
+    //IMPORTANTE: Para verificar la conexion a Internet es necerario agregar el siguiente permiso en el Manifest:
+    // <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    public boolean hayInternet(){
+    	ConnectivityManager connectivityManager = (ConnectivityManager) this.getSystemService( Context.CONNECTIVITY_SERVICE );
+ 	    NetworkInfo netInfo = connectivityManager.getActiveNetworkInfo();
+ 	    if ( netInfo == null ){
+ 	    	return false;
+ 	    }
+ 	    else if ( !netInfo.isConnected() ){
+ 	    	return false;
+ 	    }
+ 	    else if ( !netInfo.isAvailable() ){
+ 	    	return false;
+ 	    }
+ 	    else{
+ 	    	return true;
+ 	    }
+    }
 	
 	
 	@Override
@@ -561,8 +612,11 @@ private class hiloAlmuerzo extends AsyncTask<String, Long, String> {
 		// automatically handle clicks on the Home/Up button, so long
 		// as you specify a parent activity in AndroidManifest.xml.
 		int id = item.getItemId();
-		if (id == R.id.action_settings) {
+		/*if (id == R.id.action_settings) {
 			return true;
+		}*/
+		if(id == R.id.btnSalir_app){
+			finish();
 		}
 		return super.onOptionsItemSelected(item);
 	}

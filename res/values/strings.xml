@@ -4,5 +4,11 @@
     <string name="app_name">CCM Validator</string>
     <string name="hello_world">Hello world!</string>
     <string name="action_settings">Settings</string>
+    <string name="escanear">Escanear Código QR</string>
+    <string name="documento">Documento de identidad</string>
+    <string name="nombreCompleto">Nombre completo</string>
+    <string name="confimarAsistencia">Confirmar Asistencia</string>
+    <string name="descontarAlmuerzo">Descontar Almuerzo</string>
+    <string name="salirApp">Salir</string>
 
 </resources>
